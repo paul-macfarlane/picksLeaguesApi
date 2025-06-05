@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { users, type NewUser } from "../db/schema";
 import { tokenService } from "./token-service";
+import { sessionService } from "./session-service";
 export interface OAuthClients {
   google: client.Configuration;
   discord: client.Configuration;
@@ -65,10 +66,14 @@ export function createAuthRouter(clients: OAuthClients) {
     }
 
     try {
-      const authTokens = await client.authorizationCodeGrant(config, currentUrl, {
-        pkceCodeVerifier: storedState.codeVerifier,
-        expectedState: storedState.state,
-      });
+      const authTokens = await client.authorizationCodeGrant(
+        config,
+        currentUrl,
+        {
+          pkceCodeVerifier: storedState.codeVerifier,
+          expectedState: storedState.state,
+        },
+      );
 
       // Fetch user info using access token
       const userInfoResponse = await client.fetchProtectedResource(
@@ -78,13 +83,21 @@ export function createAuthRouter(clients: OAuthClients) {
         "GET",
       );
 
-      const userinfo = await userInfoResponse.json();
+      if (!userInfoResponse.body) {
+        throw new Error('Failed to fetch user info');
+      }
+
+      const userInfoJson = JSON.parse(userInfoResponse.body.toString()) as {
+        email: string;
+        name: string;
+        sub: string;
+      };
 
       // Find or create user
       const existingUser = await db
         .select()
         .from(users)
-        .where(eq(users.providerId, userinfo.sub))
+        .where(eq(users.providerId, userInfoJson.sub))
         .execute();
 
       let userId: string;
@@ -92,9 +105,9 @@ export function createAuthRouter(clients: OAuthClients) {
       if (existingUser.length === 0) {
         const newUser: NewUser = {
           provider,
-          providerId: userinfo.sub,
-          email: userinfo.email as string,
-          name: userinfo.name as string,
+          providerId: userInfoJson.sub,
+          email: userInfoJson.email,
+          name: userInfoJson.name,
         };
 
         const [user] = await db
@@ -109,7 +122,18 @@ export function createAuthRouter(clients: OAuthClients) {
       // Generate tokens
       const tokens = await tokenService.generateTokens(userId, provider);
 
-      res.json(tokens);
+      // Create session
+      const session = await sessionService.createSession(userId, {
+        provider,
+        email: userInfoJson.email,
+        name: userInfoJson.name,
+        lastLogin: new Date(),
+      });
+
+      res.json({
+        ...tokens,
+        sessionId: session.id,
+      });
     } catch (err) {
       console.error("Authentication error:", err);
       res.status(500).json({ error: "Authentication failed" });
@@ -150,6 +174,33 @@ export function createAuthRouter(clients: OAuthClients) {
       console.error("Token revocation error:", err);
       res.status(500).json({ error: "Failed to revoke token" });
     }
+  });
+
+  // Session management routes
+  router.get("/session", async (req, res) => {
+    if (!req.session) {
+      return res.status(401).json({ error: "No active session" });
+    }
+
+    res.json(req.session);
+  });
+
+  router.delete("/session", async (req, res) => {
+    if (!req.session) {
+      return res.status(401).json({ error: "No active session" });
+    }
+
+    await sessionService.deleteSession(req.session.id);
+    res.json({ message: "Session terminated" });
+  });
+
+  router.delete("/sessions", async (req, res) => {
+    if (!req.session) {
+      return res.status(401).json({ error: "No active session" });
+    }
+
+    await sessionService.deleteUserSessions(req.session.userId);
+    res.json({ message: "All sessions terminated" });
   });
 
   return router;
