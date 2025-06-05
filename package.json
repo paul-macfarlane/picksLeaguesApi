@@ -1,5 +1,5 @@
 {
-  "name": "picksleagueapi",
+  "name": "picksleagueaspi",
   "version": "1.0.0",
   "description": "Backend API for managing picks leagues",
   "main": "dist/app.js",
