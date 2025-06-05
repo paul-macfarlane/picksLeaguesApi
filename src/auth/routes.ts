@@ -107,21 +107,26 @@ export function createAuthRouter(clients: OAuthClients) {
           sub: discordUser.id,
         };
       } else {
-        const userInfoResponse = await client.fetchProtectedResource(
-          config,
-          authTokens.access_token,
-          new URL(config.serverMetadata().userinfo_endpoint!),
-          "GET",
+        const userInfoResponse = await fetch(
+          "https://www.googleapis.com/oauth2/v3/userinfo",
+          {
+            headers: {
+              Authorization: `Bearer ${authTokens.access_token}`,
+            },
+          },
         );
 
-        if (!userInfoResponse.body) {
-          throw new Error("Failed to fetch user info");
+        if (!userInfoResponse.ok) {
+          throw new Error(`Google API error: ${userInfoResponse.status}`);
         }
 
-        userInfoJson = JSON.parse(userInfoResponse.body.toString()) as {
-          email: string;
-          name: string;
-          sub: string;
+        const responseBody = await userInfoResponse.text();
+        const googleUser = JSON.parse(responseBody);
+
+        userInfoJson = {
+          email: googleUser.email,
+          name: googleUser.name,
+          sub: googleUser.sub,
         };
       }
 
