@@ -20,12 +20,20 @@ This document describes the OAuth 2.0 + OpenID Connect implementation in the Pic
    - Unique for each auth request
    - Validated on callback
 
-3. **JWT for Sessions**
-   - Signed with a secret key
-   - Contains user ID and provider info
-   - 7-day expiration
+3. **Token-based Authentication**
+   - Access tokens (JWT)
+     - Short-lived (1 hour)
+     - Contains user ID and provider info
+     - Used for API requests
+   - Refresh tokens
+     - Long-lived (30 days)
+     - Stored securely in database
+     - Can be revoked
+     - Used to obtain new access tokens
 
 ## Database Schema
+
+### Users Table
 ```typescript
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -33,6 +41,18 @@ export const users = pgTable('users', {
   providerId: text('provider_id').notNull(),
   email: text('email').notNull(),
   name: text('name').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+```
+
+### Refresh Tokens Table
+```typescript
+export const refreshTokens = pgTable('refresh_tokens', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  token: text('token').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  isRevoked: boolean('is_revoked').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 ```
@@ -76,10 +96,9 @@ const userInfoResponse = await client.fetchProtectedResource(
 );
 
 // 3. Create or update user
-// 4. Generate JWT
-const token = jwt.sign({ userId, provider }, process.env.JWT_SECRET!, {
-  expiresIn: "7d",
-});
+// 4. Generate tokens
+const tokens = await tokenService.generateTokens(userId, provider);
+// Returns: { accessToken, refreshToken, expiresIn }
 ```
 
 ## Environment Variables
@@ -120,8 +139,30 @@ BASE_URL=http://localhost:3000  # Your application's base URL
 5. Implement rate limiting for auth endpoints
 6. Monitor for suspicious authentication patterns
 
+## Token Management
+
+### Refresh Token Flow
+```typescript
+// Request new access token
+POST /auth/refresh
+Body: { refreshToken: string }
+Response: { accessToken: string, expiresIn: number }
+
+// Revoke refresh token
+POST /auth/revoke
+Body: { refreshToken: string }
+Response: { message: string }
+```
+
+### Security Features
+- Refresh tokens are stored in a database and can be revoked
+- Automatic cleanup of expired and revoked tokens
+- One refresh token per user per device
+- Access tokens are short-lived (1 hour)
+- Refresh tokens expire after 30 days
+
 ## Future Improvements
-1. Add refresh token support
+1. Add support for multiple active refresh tokens per user
 2. Implement token revocation
 3. Add more providers (GitHub, Microsoft, etc.)
 4. Add role-based access control

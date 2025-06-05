@@ -1,9 +1,9 @@
 import { Router } from "express";
 import * as client from "openid-client";
-import jwt from "jsonwebtoken";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { users, type NewUser } from "../db/schema";
+import { tokenService } from "./token-service";
 export interface OAuthClients {
   google: client.Configuration;
   discord: client.Configuration;
@@ -65,7 +65,7 @@ export function createAuthRouter(clients: OAuthClients) {
     }
 
     try {
-      const tokens = await client.authorizationCodeGrant(config, currentUrl, {
+      const authTokens = await client.authorizationCodeGrant(config, currentUrl, {
         pkceCodeVerifier: storedState.codeVerifier,
         expectedState: storedState.state,
       });
@@ -73,7 +73,7 @@ export function createAuthRouter(clients: OAuthClients) {
       // Fetch user info using access token
       const userInfoResponse = await client.fetchProtectedResource(
         config,
-        tokens.access_token,
+        authTokens.access_token,
         new URL(config.serverMetadata().userinfo_endpoint!),
         "GET",
       );
@@ -106,17 +106,49 @@ export function createAuthRouter(clients: OAuthClients) {
         userId = existingUser[0].id;
       }
 
-      // Generate JWT
-      const token = jwt.sign({ userId, provider }, process.env.JWT_SECRET!, {
-        expiresIn: "7d",
-      });
+      // Generate tokens
+      const tokens = await tokenService.generateTokens(userId, provider);
 
-      res.json({ token });
+      res.json(tokens);
     } catch (err) {
       console.error("Authentication error:", err);
       res.status(500).json({ error: "Authentication failed" });
     } finally {
       states.delete(storedState.state);
+    }
+  });
+
+  // Refresh token endpoint
+  router.post("/refresh", async (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ error: "Refresh token is required" });
+    }
+
+    try {
+      const tokens = await tokenService.refreshAccessToken(refreshToken);
+      res.json(tokens);
+    } catch (err) {
+      console.error("Token refresh error:", err);
+      res.status(401).json({ error: "Invalid refresh token" });
+    }
+  });
+
+  // Revoke refresh token endpoint
+  router.post("/revoke", async (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ error: "Refresh token is required" });
+    }
+
+    try {
+      await tokenService.revokeRefreshToken(refreshToken);
+      res.json({ message: "Token revoked successfully" });
+    } catch (err) {
+      console.error("Token revocation error:", err);
+      res.status(500).json({ error: "Failed to revoke token" });
     }
   });
 
