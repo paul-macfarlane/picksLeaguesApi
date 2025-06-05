@@ -1,11 +1,13 @@
 # Frontend Authentication Guide
 
 ## Overview
+
 This guide demonstrates how to integrate with the OAuth authentication system from a frontend application.
 
 ## Quick Start
 
 ### 1. Login Button
+
 ```typescript
 // React example
 function LoginButton({ provider }: { provider: 'google' | 'discord' }) {
@@ -23,6 +25,7 @@ function LoginButton({ provider }: { provider: 'google' | 'discord' }) {
 ```
 
 ### 2. Callback Handler
+
 ```typescript
 // React example using React Router
 function AuthCallback() {
@@ -33,7 +36,7 @@ function AuthCallback() {
     // Get the token from the URL query params
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
-    
+
     if (token) {
       // Store the token
       localStorage.setItem('auth_token', token);
@@ -53,37 +56,39 @@ function AuthCallback() {
 ```
 
 ### 3. Using the JWT Token
+
 ```typescript
 // API client example
 const api = {
   async fetchProtectedResource() {
-    const token = localStorage.getItem('auth_token');
+    const token = localStorage.getItem("auth_token");
     if (!token) {
-      throw new Error('Not authenticated');
+      throw new Error("Not authenticated");
     }
 
     const response = await fetch(`${API_BASE_URL}/api/protected-resource`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
     if (!response.ok) {
       if (response.status === 401) {
         // Token expired or invalid
-        localStorage.removeItem('auth_token');
-        window.location.href = '/login';
-        throw new Error('Session expired');
+        localStorage.removeItem("auth_token");
+        window.location.href = "/login";
+        throw new Error("Session expired");
       }
-      throw new Error('Request failed');
+      throw new Error("Request failed");
     }
 
     return response.json();
-  }
+  },
 };
 ```
 
 ### 4. Protected Route Component
+
 ```typescript
 // React example
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -105,11 +110,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
             'Authorization': `Bearer ${token}`,
           },
         });
-        
+
         if (!response.ok) {
           throw new Error('Invalid token');
         }
-        
+
         setIsAuthenticated(true);
       } catch (error) {
         localStorage.removeItem('auth_token');
@@ -129,6 +134,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 ```
 
 ## Usage Example
+
 ```typescript
 // App.tsx
 function App() {
@@ -156,21 +162,24 @@ function App() {
 ## Error Handling
 
 ### Common Error Scenarios
+
 1. **Token Expired**
+
    ```typescript
    if (response.status === 401) {
      // Clear token and redirect to login
-     localStorage.removeItem('auth_token');
-     window.location.href = '/login';
+     localStorage.removeItem("auth_token");
+     window.location.href = "/login";
    }
    ```
 
 2. **Network Error**
+
    ```typescript
    try {
      await api.fetchProtectedResource();
    } catch (error) {
-     if (error.name === 'NetworkError') {
+     if (error.name === "NetworkError") {
        // Handle offline scenario
        showOfflineMessage();
      }
@@ -179,13 +188,14 @@ function App() {
 
 3. **Invalid State**
    ```typescript
-   if (response.status === 400 && response.data.error === 'Invalid state') {
+   if (response.status === 400 && response.data.error === "Invalid state") {
      // Authentication flow was interrupted
-     showErrorMessage('Authentication failed. Please try again.');
+     showErrorMessage("Authentication failed. Please try again.");
    }
    ```
 
 ## Security Best Practices
+
 1. Always store tokens in `localStorage` or `sessionStorage`, never in cookies for SPA
 2. Clear tokens on logout and authentication errors
 3. Use HTTPS for all API requests
@@ -195,6 +205,7 @@ function App() {
 7. Consider implementing a service worker for offline support
 
 ## TypeScript Interfaces
+
 ```typescript
 interface AuthToken {
   token: string;
@@ -205,7 +216,7 @@ interface User {
   id: string;
   email: string;
   name: string;
-  provider: 'google' | 'discord';
+  provider: "google" | "discord";
 }
 
 interface AuthError {

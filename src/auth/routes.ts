@@ -37,7 +37,7 @@ export function createAuthRouter(clients: OAuthClients) {
 
     const parameters: Record<string, string> = {
       redirect_uri: `${process.env.BASE_URL}/auth/callback/${provider}`,
-      scope: "openid email profile",
+      scope: provider === "discord" ? "identify email" : "openid email profile",
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
       state,
@@ -76,22 +76,54 @@ export function createAuthRouter(clients: OAuthClients) {
       );
 
       // Fetch user info using access token
-      const userInfoResponse = await client.fetchProtectedResource(
-        config,
-        authTokens.access_token,
-        new URL(config.serverMetadata().userinfo_endpoint!),
-        "GET",
-      );
+      let userInfoJson: { email: string; name: string; sub: string };
 
-      if (!userInfoResponse.body) {
-        throw new Error('Failed to fetch user info');
+      if (provider === "discord") {
+        const userInfoResponse = await fetch(
+          "https://discord.com/api/users/@me",
+          {
+            headers: {
+              Authorization: `Bearer ${authTokens.access_token}`,
+            },
+          },
+        );
+
+        if (!userInfoResponse.ok) {
+          throw new Error(`Discord API error: ${userInfoResponse.status}`);
+        }
+
+        const responseBody = await userInfoResponse.text();
+
+        const discordUser = JSON.parse(responseBody) as {
+          id: string;
+          email: string;
+          username: string;
+          discriminator: string;
+        };
+
+        userInfoJson = {
+          email: discordUser.email,
+          name: discordUser.username,
+          sub: discordUser.id,
+        };
+      } else {
+        const userInfoResponse = await client.fetchProtectedResource(
+          config,
+          authTokens.access_token,
+          new URL(config.serverMetadata().userinfo_endpoint!),
+          "GET",
+        );
+
+        if (!userInfoResponse.body) {
+          throw new Error("Failed to fetch user info");
+        }
+
+        userInfoJson = JSON.parse(userInfoResponse.body.toString()) as {
+          email: string;
+          name: string;
+          sub: string;
+        };
       }
-
-      const userInfoJson = JSON.parse(userInfoResponse.body.toString()) as {
-        email: string;
-        name: string;
-        sub: string;
-      };
 
       // Find or create user
       const existingUser = await db
